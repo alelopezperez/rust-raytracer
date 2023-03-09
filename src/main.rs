@@ -162,6 +162,20 @@ impl Vec3 {
     }
 }
 
+struct HitRecord {
+    p: point3,
+    normal: Vec3,
+    t: f64,
+}
+
+trait HitTable {
+    fn hit(&self, r: &Ray, t_min: f64, t_max: f64, rec: &HitRecord) -> bool {
+        return false;
+    }
+}
+
+impl HitTable for HitRecord {}
+
 type point3 = Vec3;
 
 struct Ray {
@@ -196,7 +210,52 @@ impl Ray {
         self.orig.clone() + (t * self.dir.clone())
     }
 }
+struct Sphere {
+    pub center: point3,
+    pub radius: f64,
+}
 
+impl Sphere {
+    fn new() -> Self {
+        Self {
+            center: point3::new(),
+            radius: 0.0,
+        }
+    }
+
+    fn new_val(center: point3, radius: f64) -> Self {
+        Self { center, radius }
+    }
+}
+
+impl HitTable for Sphere {
+    fn hit(&self, r: &Ray, t_min: f64, t_max: f64, rec: &mut HitRecord) -> bool {
+        let oc = r.origin() - self.center;
+        let a = r.direction().length_squared();
+        let half_b = Vec3::dot(&oc, &r.direction());
+        let c = oc.length_squared() - self.radius * self.radius;
+
+        let discriminant = half_b * half_b - a * c;
+        if discriminant < 0.0 {
+            return false;
+        }
+
+        let sqrtd = f64::sqrt(discriminant);
+        let mut root = (-half_b - sqrtd) / a;
+        if root < t_min || t_max < root {
+            root = (-half_b + sqrtd) / a;
+            if root < t_min || t_max < root {
+                return false;
+            }
+        }
+
+        rec.t = root;
+        rec.p = r.at(rec.t);
+        rec.normal = (rec.p - self.center) / self.radius;
+
+        true
+    }
+}
 type color = Vec3;
 
 fn write_color(pixel_color: &color) {
@@ -209,10 +268,29 @@ fn write_color(pixel_color: &color) {
 }
 
 fn ray_color(r: &Ray) -> color {
+    let t = hit_sphere(&point3::new_val(0.0, 0.0, -1.0), &0.5, r);
+    if t > 0.0 {
+        let N = Vec3::unit_vector(&(r.at(t) - Vec3::new_val(0.0, 0.0, -1.0)));
+        return 0.5 * color::new_val(N.x() + 1.0, N.y() + 1.0, N.z() + 1.0);
+    }
     let unit_direction = Vec3::unit_vector(&r.direction());
     let t = 0.5 * (unit_direction.y() + 1.0);
     ((1.0 - t) * color::new_val(1.0, 1.0, 1.0)) + (t * color::new_val(0.5, 0.7, 1.0))
 }
+
+fn hit_sphere(center: &point3, radius: &f64, r: &Ray) -> f64 {
+    let oc = r.origin() - *center;
+    let a = r.direction().length_squared();
+    let half_b = Vec3::dot(&oc, &r.direction());
+    let c = oc.length_squared() - radius * radius;
+    let discriminant = half_b * half_b - a * c;
+    if discriminant < 0.0 {
+        return -1.0;
+    } else {
+        return (-half_b - f64::sqrt(discriminant)) / (2.0);
+    }
+}
+
 fn main() {
     // Image
     let aspect_ratio = 16.0 / 9.0;
