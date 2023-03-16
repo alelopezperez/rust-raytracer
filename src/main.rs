@@ -1,12 +1,33 @@
+use rand;
 use std::ops;
 use std::rc::Rc;
 
+//Utility Functions Vec::unit should be utility
 const infinity: f64 = f64::INFINITY;
 const pi: f64 = 3.1415926535897932385;
 
 fn degrees_to_radians(degrees: f64) -> f64 {
     degrees * pi / 180.0
 }
+
+fn random_double() -> f64 {
+    rand::random::<f64>()
+}
+
+fn random_double_val(min: f64, max: f64) -> f64 {
+    min + (max - min) * random_double()
+}
+
+fn clamp(x: f64, min: f64, max: f64) -> f64 {
+    if x < min {
+        return min;
+    }
+    if x > max {
+        return max;
+    }
+    x
+}
+//End of Utility Functions
 
 #[derive(Debug, Clone, Copy)]
 struct Vec3 {
@@ -50,8 +71,8 @@ impl ops::AddAssign for Vec3 {
         *self = Self {
             e: [
                 self.e[0] + rhs.e[0],
-                self.e[0] + rhs.e[0],
-                self.e[0] + rhs.e[0],
+                self.e[1] + rhs.e[1],
+                self.e[2] + rhs.e[2],
             ],
         };
     }
@@ -340,12 +361,21 @@ impl HitTable for HitTableList {
 
 type color = Vec3;
 
-fn write_color(pixel_color: &color) {
+fn write_color(pixel_color: &color, samples_per_pixel: i32) {
+    let mut r = pixel_color.x();
+    let mut g = pixel_color.y();
+    let mut b = pixel_color.z();
+
+    let scale = 1.0 / samples_per_pixel as f64;
+    r *= scale;
+    g *= scale;
+    b *= scale;
+
     println!(
         "{} {} {}",
-        (255.999 * pixel_color.x()) as i32,
-        (255.999 * pixel_color.y()) as i32,
-        (255.999 * pixel_color.z()) as i32
+        (256.0 * clamp(r, 0.0, 0.999)) as i32,
+        (256.0 * clamp(g, 0.0, 0.999)) as i32,
+        (256.0 * clamp(b, 0.0, 0.999)) as i32
     );
 }
 
@@ -373,11 +403,47 @@ fn hit_sphere(center: &point3, radius: &f64, r: &Ray) -> f64 {
     }
 }
 
+struct Camera {
+    origin: point3,
+    lower_left_corner: point3,
+    horizontal: Vec3,
+    vertical: Vec3,
+}
+impl Camera {
+    fn new() -> Self {
+        let aspect_ratio = 16.0 / 9.0;
+        let viewport_height = 2.0;
+        let viewport_width = aspect_ratio * viewport_height;
+        let focal_length = 1.0;
+
+        let origin = point3::new_val(0.0, 0.0, 0.0);
+        let horizontal = Vec3::new_val(viewport_width, 0.0, 0.0);
+        let vertical = Vec3::new_val(0.0, viewport_height, 0.0);
+        let lower_left_corner = ((origin - (horizontal / 2 as f64)) - (vertical / 2 as f64))
+            - (Vec3::new_val(0.0, 0.0, focal_length));
+
+        Self {
+            origin: origin,
+            horizontal,
+            vertical,
+            lower_left_corner,
+        }
+    }
+
+    fn get_ray(&self, u: f64, v: f64) -> Ray {
+        Ray::new_val(
+            &self.origin,
+            &(self.lower_left_corner + u * self.horizontal + v * self.vertical - self.origin),
+        )
+    }
+}
+
 fn main() {
     // Image
     let aspect_ratio = 16.0 / 9.0;
     let image_width = 400;
     let image_height = (image_width as f64 / aspect_ratio) as i32;
+    let samples_per_pixel = 100;
 
     // World
     let mut world = HitTableList::new();
@@ -391,31 +457,21 @@ fn main() {
     )));
 
     //Camera
-    let viewport_height = 2.0;
-    let viewport_width = aspect_ratio * viewport_height;
-    let focal_length = 1.0;
-
-    let origin = point3::new_val(0.0, 0.0, 0.0);
-    let horizontal = Vec3::new_val(viewport_width, 0.0, 0.0);
-    let vertical = Vec3::new_val(0.0, viewport_height, 0.0);
-    let lower_left_corner = ((origin - (horizontal / 2 as f64)) - (vertical / 2 as f64))
-        - (Vec3::new_val(0.0, 0.0, focal_length));
+    let cam = Camera::new();
 
     // Render
     println!("P3\n {} {} \n255", image_width, image_height);
 
     for j in (0..image_height as usize - 1).rev() {
         for i in 0..image_width {
-            let u = i as f64 / (image_width - 1) as f64;
-            let v = j as f64 / (image_height - 1) as f64;
-
-            let r = Ray::new_val(
-                &origin,
-                &(lower_left_corner + ((u * horizontal) + ((v * vertical) - origin))),
-            );
-
-            let pixel_color = ray_color(&r, &world);
-            write_color(&pixel_color)
+            let mut pixel_color = color::new_val(0.0, 0.0, 0.0);
+            for _ in 0..samples_per_pixel {
+                let u = (i as f64 + random_double()) / (image_width - 1) as f64;
+                let v = (j as f64 + random_double()) / (image_height - 1) as f64;
+                let r = cam.get_ray(u, v);
+                pixel_color += ray_color(&r, &world);
+            }
+            write_color(&pixel_color, samples_per_pixel);
         }
     }
 }
