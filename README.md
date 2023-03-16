@@ -4,10 +4,27 @@ Here I'll be documenting a personal guide for all new Rust concepts
 learned via completing the [Raytracing in One Weekend](https://raytracing.github.io/books/RayTracingInOneWeekend.html)
 written in C++ and creating a Rust Implmentation
 
+## Current Chapter
+
+- 7.0 Antialiasing
+
 ## Basics of `struct`
 
 When implementing a trait for a struct `Self` is just a type alias of the struct
 `type Self = typeofstruct`
+
+when using impl if you dont use `self` or `&self` or `&mut self` the function will not for the instatiaded object, it will be an associated funciton `SomeStruct::func()`
+
+## Statics and Const
+
+**constants** are declared with the `const` keyword there are **inlined** in the program binary so it does not have an address in memory and need to be explictly anotated.
+
+```
+const infinity: f64 = f64::INFINITY;
+const pi: f64 = 3.1415926535897932385;
+```
+
+**static** is a sort global varibles they are NOT inlined in the program so it does have an address in memory and it can be mutable (it is unsafe to mutate)
 
 ## Operator Oveload
 
@@ -100,8 +117,47 @@ impl ops::Add<Vec3> for f64 { //<-- f64 has copy already implemented
 </ul>
 </ul>
 
+## `impl` and `traits`
+
+Only impls of traits can be done on `&SomeStruct`
+
+```
+impl trait for &SomeStruct{
+    fn function(){
+
+    }
+}
+```
+
+if you try impl `&SomeStruct` it will error, instead pass `&self` if you need to use the reference of the instatiated struct
+
+```
+impl SomeStruc {
+    fn foo(&self){
+
+    }
+
+    fn bar(self){
+
+    }
+
+}
+```
+
 ## Borrow and Ownership
 
 _Future notes for any new things learned about borrow checker and ownership rules_
 
 ### Copy and Clone Trait
+
+### Inlining
+
+- https://nnethercote.github.io/perf-book/inlining.html
+
+### Dyn and RC RefCell
+
+When implementing something that the compilers does not know the size at compile, for this example a `Vec<TraitType>` we do not know the size the struct at compile time. At such we need to use **Dynamic Dispatch** via the `dyn` keyword.
+
+- `Vec<impl TraitType>` impl trait generic is only for functions and return types.
+- `Vec<Box<TraitType>>` this is ok, because the compiler knows the size of a pointer
+- `Vec<Rc<TraitType>>` this is ok,

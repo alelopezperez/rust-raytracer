@@ -1,4 +1,12 @@
 use std::ops;
+use std::rc::Rc;
+
+const infinity: f64 = f64::INFINITY;
+const pi: f64 = 3.1415926535897932385;
+
+fn degrees_to_radians(degrees: f64) -> f64 {
+    degrees * pi / 180.0
+}
 
 #[derive(Debug, Clone, Copy)]
 struct Vec3 {
@@ -76,11 +84,22 @@ impl ops::DivAssign<f64> for Vec3 {
         *self *= 1.0 / rhs;
     }
 }
+
 impl ops::Neg for Vec3 {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
         Self {
+            e: [-self.e[0], -self.e[1], -self.e[2]],
+        }
+    }
+}
+
+impl ops::Neg for &Vec3 {
+    type Output = Vec3;
+
+    fn neg(self) -> Self::Output {
+        Self::Output {
             e: [-self.e[0], -self.e[1], -self.e[2]],
         }
     }
@@ -162,19 +181,38 @@ impl Vec3 {
     }
 }
 
+#[derive(Clone)]
 struct HitRecord {
     p: point3,
     normal: Vec3,
     t: f64,
+    front_face: bool,
 }
-
-trait HitTable {
-    fn hit(&self, r: &Ray, t_min: f64, t_max: f64, rec: &mut HitRecord) -> bool {
-        return false;
+impl HitRecord {
+    fn new() -> Self {
+        Self {
+            p: point3::new(),
+            normal: Vec3::new(),
+            t: 0.0,
+            front_face: false,
+        }
     }
 }
 
-impl HitTable for HitRecord {}
+trait HitTable {
+    fn hit(&self, r: &Ray, t_min: f64, t_max: f64, rec: &mut HitRecord) -> bool;
+}
+
+impl HitRecord {
+    fn set_face_normal(&mut self, r: &Ray, outward_normal: &Vec3) {
+        self.front_face = Vec3::dot(&r.direction(), outward_normal) < 0.0;
+        if self.front_face {
+            self.normal = *outward_normal;
+        } else {
+            self.normal = -outward_normal;
+        }
+    }
+}
 
 type point3 = Vec3;
 
@@ -251,11 +289,55 @@ impl HitTable for Sphere {
 
         rec.t = root;
         rec.p = r.at(rec.t);
-        rec.normal = (rec.p - self.center) / self.radius;
+        let outward_normal = (rec.p - self.center) / self.radius;
+        rec.set_face_normal(r, &outward_normal);
 
         true
     }
 }
+
+struct HitTableList {
+    objects: Vec<Rc<dyn HitTable>>,
+}
+
+impl HitTableList {
+    fn new() -> Self {
+        HitTableList {
+            objects: Vec::new(),
+        }
+    }
+    fn new_val(object: Rc<dyn HitTable>) -> Self {
+        let list = HitTableList {
+            objects: vec![object],
+        };
+        list
+    }
+    fn add(&mut self, object: Rc<dyn HitTable>) {
+        self.objects.push(object);
+    }
+
+    fn clear(&mut self) {
+        self.objects.clear();
+    }
+}
+impl HitTable for HitTableList {
+    fn hit(&self, r: &Ray, t_min: f64, t_max: f64, rec: &mut HitRecord) -> bool {
+        let mut temp_rec: HitRecord = HitRecord::new();
+        let mut hit_anything = false;
+        let mut closest_so_far = t_max;
+
+        for object in &self.objects {
+            if object.hit(r, t_min, closest_so_far, &mut temp_rec) {
+                hit_anything = true;
+                closest_so_far = temp_rec.t;
+                *rec = temp_rec.clone();
+            }
+        }
+
+        hit_anything
+    }
+}
+
 type color = Vec3;
 
 fn write_color(pixel_color: &color) {
@@ -267,15 +349,15 @@ fn write_color(pixel_color: &color) {
     );
 }
 
-fn ray_color(r: &Ray) -> color {
-    let t = hit_sphere(&point3::new_val(0.0, 0.0, -1.0), &0.5, r);
-    if t > 0.0 {
-        let N = Vec3::unit_vector(&(r.at(t) - Vec3::new_val(0.0, 0.0, -1.0)));
-        return 0.5 * color::new_val(N.x() + 1.0, N.y() + 1.0, N.z() + 1.0);
+fn ray_color(r: &Ray, world: &impl HitTable) -> color {
+    let mut rec: HitRecord = HitRecord::new();
+    if world.hit(r, 0.0, infinity, &mut rec) {
+        return 0.5 * (rec.normal + color::new_val(1.0, 1.0, 1.0));
     }
+
     let unit_direction = Vec3::unit_vector(&r.direction());
     let t = 0.5 * (unit_direction.y() + 1.0);
-    ((1.0 - t) * color::new_val(1.0, 1.0, 1.0)) + (t * color::new_val(0.5, 0.7, 1.0))
+    (1.0 - t) * color::new_val(1.0, 1.0, 1.0) + t * color::new_val(0.5, 0.7, 1.0)
 }
 
 fn hit_sphere(center: &point3, radius: &f64, r: &Ray) -> f64 {
@@ -296,6 +378,17 @@ fn main() {
     let aspect_ratio = 16.0 / 9.0;
     let image_width = 400;
     let image_height = (image_width as f64 / aspect_ratio) as i32;
+
+    // World
+    let mut world = HitTableList::new();
+    world.add(Rc::new(Sphere::new_val(
+        point3::new_val(0.0, 0.0, -1.0),
+        0.5,
+    )));
+    world.add(Rc::new(Sphere::new_val(
+        point3::new_val(0.0, -100.5, -1.0),
+        100.0,
+    )));
 
     //Camera
     let viewport_height = 2.0;
@@ -321,7 +414,7 @@ fn main() {
                 &(lower_left_corner + ((u * horizontal) + ((v * vertical) - origin))),
             );
 
-            let pixel_color = ray_color(&r);
+            let pixel_color = ray_color(&r, &world);
             write_color(&pixel_color)
         }
     }
