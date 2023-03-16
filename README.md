@@ -6,7 +6,7 @@ written in C++ and creating a Rust Implmentation
 
 ## Current Chapter
 
-- 7.0 Antialiasing
+- 8.0 Diffuse
 
 ## Basics of `struct`
 
